@@ -1,4 +1,4 @@
-// language: Kotlin, file: CaptureService.kt
+// language: Kotlin
 package com.example.mlbbassistant
 
 import android.app.Notification
@@ -10,11 +10,13 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PixelFormat
+import android.graphics.drawable.Icon
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.Image
@@ -26,6 +28,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
+import android.os.Process
 import android.provider.MediaStore
 import android.util.DisplayMetrics
 import android.view.WindowManager
