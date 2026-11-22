@@ -3,32 +3,46 @@ package com.example.mlbbassistant
 
 class Calibration {
     // --- POSISI TIMER (Atas Tengah) ---
-    // Angka 0.0 - 1.0 (Persentase dari atas layar)
     val timerT = 0.03f
     val timerB = 0.09f
     val timerL = 0.45f
     val timerR = 0.55f
 
     // --- POSISI MINIMAP (Kiri Atas) ---
-    val minimapL = 0.01f
-    val minimapT = 0.02f
-    val minimapR = 0.18f
-    val minimapB = 0.35f
+    val minL = 0.01f
+    val minT = 0.02f
+    val minR = 0.18f
+    val minB = 0.35f
 
-    // --- AREA SCAN BAR HP HERO SENDIRI ---
-    // Karena layar panjang, bar HP agak naik ke atas
-    val selfX = 0.5f      // Tengah layar
-    val selfY = 0.82f     // 82% dari atas (area jempol)
-    val selfRadius = 0.15f
-
-    // --- BATAS AREA PENCARIAN HUD LAIN ---
-    val hudTop = 0.1f     // Jangan scan terlalu ke atas (area notif)
-    val hudBottom = 0.85f // Jangan scan ke bawah (area joystick)
-    val joyR = 0.35f      // Area joystick kiri (0 - 35% layar)
-    val skillLeft = 0.65f // Area skill kanan (65% - 100%)
-    val skillTop = 0.7f   // Area skill bagian atas
-
-    // --- WARNA REFERENSI (RGB) ---
-    val selfRef = 0.8f    // Sensitivitas warna bar HP sendiri
+    // --- WARNA REFERENSI (Threshold 0.0 - 1.0) ---
+    val selfBarRef = 0.8f
     val enemyBarRef = 0.8f
+    val allyBarRef = 0.8f
+
+    // --- FILTER BAR HP ---
+    val heroHpMinHeight = 0.005f
+    val barMaxHeight = 0.02f
+    val heroBarMax = 0.2f
+
+    // --- TURRET ---
+    val turretBarMin = 0.03f
+
+    // --- MINIMAP DOTS (Titik Hero) ---
+    val dotMin = 0.005f
+    val dotMax = 0.02f
+
+    // --- AREA EKSKLUSI (Joystick & Skill) ---
+    val joyRight = 0.35f
+    val joyTop = 0.70f
+    val skillLeft = 0.65f
+    val skillTop = 0.70f
+
+    // --- BATAS AREA HUD ---
+    val hudTop = 0.10f
+    val hudBottom = 0.85f
+
+    // --- SCAN AREA HP DIRI SENDIRI (Redmi 14C) ---
+    val selfX = 0.5f
+    val selfY = 0.82f
+    val selfRadius = 0.15f
 }
