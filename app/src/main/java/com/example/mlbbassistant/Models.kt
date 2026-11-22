@@ -11,7 +11,6 @@ data class Snapshot(
     val enemyTurretVisible: Boolean,
     val minimapEnemyDots: Int?,
     val minimapAllyDots: Int?,
-    /** Musuh yang tadi terlihat di minimap lalu hilang (kemungkinan di fog / semak). */
     val missingEnemies: Int = 0,
     val missingAgeSec: Int? = null
 )
