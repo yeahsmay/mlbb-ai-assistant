@@ -237,6 +237,9 @@ class CaptureService : Service() {
 
         val advice = engine.update(snap, currentRole)
 
+        // --- UPDATE UI STATUS ---
+        OverlayService.updateStatus("${advice.action} - ${advice.reason}")
+
         // --- LIVE VOICE COACH ---
         if (advice.signal == Signal.RED || advice.signal == Signal.YELLOW) {
             VoiceCoach.speak("${advice.action}. ${advice.reason}", force = (advice.signal == Signal.RED))
@@ -328,7 +331,7 @@ class CaptureService : Service() {
                     // --- HERO COUNTER AI ---
                     val counterResult = HeroCounterEngine.getCounters(res.text)
                     if (counterResult != "Membaca draft musuh...") {
-                        OverlayService.updateStatus(counterResult)
+                        OverlayService.updateCounter(counterResult)
                     }
                     // -----------------------
                 }
