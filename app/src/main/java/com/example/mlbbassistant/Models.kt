@@ -1,3 +1,4 @@
+// language: Kotlin, file: Models.kt
 package com.example.mlbbassistant
 
 enum class Signal { GREEN, YELLOW, RED, BLUE, NONE }
@@ -22,7 +23,12 @@ data class Advice(
     val duelOddsPercent: Int? = null
 )
 
-data class UiState(val advice: Advice?, val status: String, val debug: String)
+data class UIState(
+    val advice: Advice?, 
+    val status: String, 
+    val debug: String
+)
+
 enum class HeroRole {
     MM,
     EXP,
