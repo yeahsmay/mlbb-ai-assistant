@@ -1,4 +1,4 @@
-// language: Kotlin
+// language: Kotlin, file: CaptureService.kt
 package com.example.mlbbassistant
 
 import android.app.Notification
@@ -100,6 +100,7 @@ class CaptureService : Service() {
         }
 
         createChannel()
+        VoiceCoach.init(this)
         startForegroundCompat()
 
         if (projection != null) return START_NOT_STICKY
@@ -178,7 +179,7 @@ class CaptureService : Service() {
             override fun onReceive(c: Context?, i: Intent?) { screenOn = i?.action != Intent.ACTION_SCREEN_OFF }
         }
         val f = IntentFilter().apply { addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON) }
-        if (Build.VERSION.SDK_INT >= 33) registerReceiver(screenReceiver, f, RECEIVER_NOT_EXPORTED)
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(screenReceiver, f, Context.RECEIVER_NOT_EXPORTED)
         else @Suppress("DEPRECATION") registerReceiver(screenReceiver, f)
 
         running = true
@@ -209,6 +210,7 @@ class CaptureService : Service() {
 
         val hud = analyzer.analyze(pixels, capW, capH)
         val now = System.currentTimeMillis()
+        
         if (hud.minimapEnemy != null) {
             val mmW = (hud.minimapRect[2] - hud.minimapRect[0] + 1).toFloat()
             lastTrack = tracker.update(
@@ -219,7 +221,7 @@ class CaptureService : Service() {
         }
         val snap = hud.toSnapshot().copy(missingEnemies = lastTrack.missing, missingAgeSec = lastTrack.missingAgeSec)
 
-        // --- TAMBAHAN VISION AI ---
+        // --- VISION AI (PREDICTOR) ---
         val enemyDots = hud.dots.filter { it[4] == 1 || it[4] == 2 }
         if (enemyDots.isNotEmpty()) {
             val predictions = VisionPredictor.updateAndPredict(
@@ -230,10 +232,26 @@ class CaptureService : Service() {
             )
             OverlayService.updatePredictions(predictions, hud.minimapRect)
         }
-        // ---------------------------
 
-        // UBAH: Tambahkan currentRole saat memanggil engine
         val advice = engine.update(snap, currentRole)
+
+        // --- LIVE VOICE COACH ---
+        if (advice.signal == Signal.RED || advice.signal == Signal.YELLOW) {
+            VoiceCoach.speak("${advice.action}. ${advice.reason}", force = (advice.signal == Signal.RED))
+        } else if (lastTrack.missing > 0 && (lastTrack.missingAgeSec ?: 0) >= 2) {
+            val miss = lastTrack.missing
+            when (currentRole) {
+                HeroRole.EXP, HeroRole.MM -> {
+                    if (miss >= 2) VoiceCoach.speak("Awas, ada $miss musuh hilang. Mid atau Jungler kemungkinan gank ke lane kamu!")
+                    else if (miss == 1) VoiceCoach.speak("Hati-hati, satu musuh hilang. Bisa jadi Roam rotasi.")
+                }
+                HeroRole.JUNGLER, HeroRole.MID, HeroRole.ROAM -> {
+                    if (miss >= 3) VoiceCoach.speak("Awas, map gelap. $miss musuh tidak terlihat. Hindari inisiasi.")
+                    else if (miss == 2) VoiceCoach.speak("Waspada, $miss musuh hilang. Kemungkinan mereka grouping.")
+                    else if (miss == 1) VoiceCoach.speak("Satu musuh hilang, jaga jarak dan kontrol map.")
+                }
+            }
+        }
 
         if (now - lastOcrAt > OCR_EVERY_MS && ocrBusy.compareAndSet(false, true)) {
             lastOcrAt = now
@@ -305,12 +323,12 @@ class CaptureService : Service() {
                     timerText = m?.let { "${it.groupValues[1]}:${it.groupValues[2]}" }
                     if (timerText != null) timerAt = System.currentTimeMillis()
 
-                    // --- TAMBAHAN HERO COUNTER AI ---
+                    // --- HERO COUNTER AI ---
                     val counterResult = HeroCounterEngine.getCounters(res.text)
                     if (counterResult != "Membaca draft musuh...") {
                         OverlayService.updateStatus(counterResult)
                     }
-                    // ---------------------------------
+                    // -----------------------
                 }
                 .addOnFailureListener { timerText = null }
                 .addOnCompleteListener { big.recycle(); ocrBusy.set(false) }
@@ -320,7 +338,43 @@ class CaptureService : Service() {
     }
 
     private fun saveDebugFrame(hud: HudResult, advice: Advice) {
-        // ... (biarin aja, isinya sama kayak punya lo)
+        try {
+            val bmp = Bitmap.createBitmap(pixels, capW, capH, Bitmap.Config.ARGB_8888)
+            val c = Canvas(bmp)
+            val p = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 2f }
+            
+            fun box(x0: Int, y0: Int, x1: Int, y1: Int, color: Int) { 
+                p.color = color; c.drawRect(x0.toFloat(), y0.toFloat(), x1.toFloat(), y1.toFloat(), p) 
+            }
+            
+            hud.selfBar?.let { box(it.x0 - 2, it.y0 - 2, it.x0 + it.fullWidth, it.y1 + 2, Color.YELLOW) }
+            hud.allyBars.forEach { box(it.x0 - 2, it.y0 - 2, it.x0 + it.fullWidth, it.y1 + 2, Color.CYAN) }
+            hud.enemyBars.forEach { box(it.x0 - 2, it.y0 - 2, it.x0 + it.fullWidth, it.y1 + 2, Color.MAGENTA) }
+            hud.turretBars.forEach { box(it.x0 - 2, it.y0 - 2, it.x0 + it.fullWidth, it.y1 + 2, Color.WHITE) }
+            box(hud.minimapRect[0], hud.minimapRect[1], hud.minimapRect[2], hud.minimapRect[3], Color.GREEN)
+            hud.dots.forEach { box(it[0] - 1, it[1] - 1, it[2] + 1, it[3] + 1, if (it[4] == 1) Color.RED else Color.BLUE) }
+            
+            val tp = Paint().apply { color = Color.WHITE; textSize = 22f; setShadowLayer(3f, 0f, 0f, Color.BLACK) }
+            c.drawText(hud.summary() + "  " + advice.signal + " · " + advice.action, 20f, capH - 20f, tp)
+            
+            val name = "mlbb_debug_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".png"
+            if (Build.VERSION.SDK_INT >= 29) {
+                val v = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/MLBB-AI-Debug")
+                }
+                val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v)
+                uri?.let { u -> contentResolver.openOutputStream(u)?.use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+            } else {
+                val dir = getExternalFilesDir("debug") ?: filesDir
+                File(dir, name).outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            }
+            bmp.recycle()
+            AnalysisBus.status("Frame debug tersimpan di Galeri > MLBB-AI-Debug")
+        } catch (e: Exception) {
+            AnalysisBus.status("Gagal simpan frame debug: ${e.javaClass.simpleName}")
+        }
     }
 
     private fun createChannel() {
@@ -342,6 +396,7 @@ class CaptureService : Service() {
         projection = null
         thread?.quitSafely(); thread = null; worker = null
         pixels = IntArray(0); rowBuf = ByteArray(0)
+        VoiceCoach.shutdown()
         stopService(Intent(this, OverlayService::class.java))
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
