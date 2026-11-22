@@ -25,6 +25,9 @@ class MainActivity : Activity() {
     private val requestCapture = 4102
     private val requestNotif = 4103
     private lateinit var info: TextView
+    
+    // TAMBAHAN: Variabel untuk menyimpan role yang dipilih (Default: MM)
+    private var selectedRole = HeroRole.MM 
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
@@ -78,6 +81,44 @@ class MainActivity : Activity() {
         }
         root.addView(info, LinearLayout.LayoutParams(-1, -2))
 
+        // TAMBAHAN: Bagian Pilihan Role
+        root.addView(label("Pilih Role Kamu:", 14f, true).apply { setPadding(0, dp(16), 0, dp(8)) })
+        
+        val roleContainer = LinearLayout(this).apply { 
+            orientation = LinearLayout.HORIZONTAL 
+            weightSum = 5f
+        }
+        
+        val roles = listOf(HeroRole.MM, HeroRole.EXP, HeroRole.MID, HeroRole.JUNGLER, HeroRole.ROAM)
+        val roleButtons = mutableListOf<Button>()
+
+        roles.forEach { role ->
+            val btn = Button(this).apply {
+                text = role.name
+                textSize = 10f
+                isAllCaps = false
+                setPadding(0, 0, 0, 0)
+                layoutParams = LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginEnd = dp(4) }
+                setOnClickListener {
+                    selectedRole = role
+                    // Update warna tombol saat dipilih
+                    roleButtons.forEachIndexed { index, b ->
+                        if (roles[index] == selectedRole) {
+                            b.background = GradientDrawable().apply { setColor(0xFFFF5FA2.toInt()); cornerRadius = dp(8).toFloat() }
+                        } else {
+                            b.background = GradientDrawable().apply { setColor(0xFF333333.toInt()); cornerRadius = dp(8).toFloat() }
+                        }
+                    }
+                }
+            }
+            roleButtons.add(btn)
+            roleContainer.addView(btn)
+        }
+        root.addView(roleContainer)
+        
+        // Set default warna tombol MM
+        roleButtons[0].background = GradientDrawable().apply { setColor(0xFFFF5FA2.toInt()); cornerRadius = dp(8).toFloat() }
+
         root.addView(button("1. Izinkan panel melayang", 0xFF22D3EE.toInt(), 0xFF3B82F6.toInt()) {
             if (!Settings.canDrawOverlays(this)) {
                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
@@ -97,7 +138,6 @@ class MainActivity : Activity() {
         ).apply { background = card(0x88140A32.toInt()); setPadding(dp(14), dp(12), dp(14), dp(12)) }
         root.addView(note, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(20) })
 
-        // Latar: wallpaper + lapisan gelap tipis supaya teks tetap terbaca
         val bg = AnimeBackgroundView(this)
         val scrim = View(this).apply { setBackgroundColor(0x44000000) }
         val frame = FrameLayout(this).apply {
@@ -145,6 +185,8 @@ class MainActivity : Activity() {
         val svc = Intent(this, CaptureService::class.java).apply {
             putExtra(CaptureService.EXTRA_RESULT_CODE, resultCode)
             putExtra(CaptureService.EXTRA_DATA, data)
+            // TAMBAHAN: Kirim role yang dipilih ke CaptureService
+            putExtra("SELECTED_ROLE", selectedRole.name) 
         }
         startForegroundService(svc)
         toast("Asisten aktif. Buka MLBB.")
