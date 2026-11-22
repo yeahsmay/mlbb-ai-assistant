@@ -41,6 +41,10 @@ class DecisionEngine(private val historySize: Int = 3, private val minValidFrame
                     "$enemies musuh vs $team di pihakmu" +
                     (if (team > enemies) ", kamu unggul jumlah tapi tetap hati-hati." else ", jumlah seimbang."))
             enemies == 1 -> duel(hp, hpPct, s)
+            s.missingEnemies > 0 ->
+                Advice(Signal.YELLOW, "WASPADA",
+                    "${s.missingEnemies} musuh hilang dari minimap" +
+                    (s.missingAgeSec?.let { " (${it}d lalu)" } ?: "") + ". Bisa di semak atau sedang rotasi.")
             mm == null ->
                 Advice(Signal.NONE, "DATA BELUM CUKUP", "Tidak ada musuh di layar, tapi minimap belum terbaca.")
             mm == 0 ->

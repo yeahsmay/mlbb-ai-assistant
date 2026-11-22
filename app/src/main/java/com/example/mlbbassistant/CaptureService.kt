@@ -58,6 +58,9 @@ class CaptureService : Service() {
     private val cal = Calibration()
     private val analyzer = FrameAnalyzer(cal)
     private val engine = DecisionEngine()
+    private val tracker = MinimapTracker()
+    private var lastTrack = MinimapTracker.Info(0, 0, null)
+    private val spellReadyAt = ArrayList<Long>()
     private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
     private val ocrBusy = AtomicBoolean(false)
     private var lastOcrAt = 0L
@@ -184,6 +187,7 @@ class CaptureService : Service() {
         reader = nr
         old?.close()
         engine.reset()
+        tracker.reset()
     }
 
     private fun processFrame(): Long {
@@ -194,9 +198,18 @@ class CaptureService : Service() {
         lastFrameAt = System.currentTimeMillis()
 
         val hud = analyzer.analyze(pixels, capW, capH)
-        val advice = engine.update(hud.toSnapshot())
-
         val now = System.currentTimeMillis()
+        if (hud.minimapEnemy != null) {
+            val mmW = (hud.minimapRect[2] - hud.minimapRect[0] + 1).toFloat()
+            lastTrack = tracker.update(
+                now,
+                hud.dots.filter { it[4] == 1 }.map { floatArrayOf((it[0] + it[2]) / 2f, (it[1] + it[3]) / 2f) },
+                mmW
+            )
+        }
+        val snap = hud.toSnapshot().copy(missingEnemies = lastTrack.missing, missingAgeSec = lastTrack.missingAgeSec)
+        val advice = engine.update(snap)
+
         if (now - lastOcrAt > OCR_EVERY_MS && ocrBusy.compareAndSet(false, true)) {
             lastOcrAt = now
             runTimerOcr()
@@ -204,8 +217,14 @@ class CaptureService : Service() {
         if (AnalysisBus.consumeDump()) saveDebugFrame(hud, advice)
 
         val fresh = timerText != null && now - timerAt < TIMER_STALE_MS
-        val status = (if (fresh) "Timer terbaca: $timerText" else "Timer belum terbaca") +
-            " | frame " + clock.format(Date(now))
+        repeat(AnalysisBus.consumeSpellTaps()) { spellReadyAt.add(now + SPELL_CD_MS) }
+        spellReadyAt.removeAll { now - it > 8000L }
+        val spellTxt = if (spellReadyAt.isEmpty()) "" else {
+            val left = (((spellReadyAt.minOrNull() ?: now) - now) / 1000).toInt()
+            "  \u26A1 " + (if (left > 0) "${left}d" else "SIAP") +
+                (if (spellReadyAt.size > 1) " x${spellReadyAt.size}" else "")
+        }
+        val status = "Game " + (if (fresh) timerText else "--:--") + " \u00B7 " + clock.format(Date(now)) + spellTxt
         AnalysisBus.post(UiState(advice, status, hud.summary()))
 
         framesWithoutHud = if (hud.hasAnyHud()) 0 else framesWithoutHud + 1
@@ -219,6 +238,7 @@ class CaptureService : Service() {
         val idle = now - lastFrameAt
         if (idle > NO_FRAME_MS) {
             engine.reset()
+            tracker.reset()
             AnalysisBus.post(UiState(null, "Tidak ada frame baru ${idle / 1000}d. Saran dihentikan.", ""))
         }
         return INTERVAL_ACTIVE
@@ -342,6 +362,8 @@ class CaptureService : Service() {
         private const val INTERVAL_IDLE = 2500L
         private const val OCR_EVERY_MS = 5000L
         private const val NO_FRAME_MS = 2500L
+        /** Cooldown spell musuh (detik x 1000). Nilai awal 120 detik, sesuaikan dengan spell yang dipakai. */
+        private const val SPELL_CD_MS = 120_000L
         private const val TIMER_STALE_MS = 12000L
     }
 }

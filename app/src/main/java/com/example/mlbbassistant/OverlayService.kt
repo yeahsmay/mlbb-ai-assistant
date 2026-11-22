@@ -9,6 +9,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -24,16 +25,17 @@ class OverlayService : Service() {
     private var action: TextView? = null
     private var reason: TextView? = null
     private var status: TextView? = null
+    private var debug: TextView? = null
     private var body: LinearLayout? = null
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     private fun colorOf(s: Signal) = when (s) {
-        Signal.GREEN -> 0xFF16A34A.toInt()
-        Signal.YELLOW -> 0xFFEAB308.toInt()
-        Signal.RED -> 0xFFDC2626.toInt()
-        Signal.BLUE -> 0xFF2563EB.toInt()
-        Signal.NONE -> 0xFF6B7280.toInt()
+        Signal.GREEN -> 0xFF22C55E.toInt()
+        Signal.YELLOW -> 0xFFFACC15.toInt()
+        Signal.RED -> 0xFFF43F5E.toInt()
+        Signal.BLUE -> 0xFF38BDF8.toInt()
+        Signal.NONE -> 0xFF9CA3AF.toInt()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -56,46 +58,57 @@ class OverlayService : Service() {
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), dp(6), dp(8), dp(6))
+            setPadding(dp(8), dp(4), dp(4), dp(2))
         }
+        // Titik sinyal: tap untuk menampilkan / menyembunyikan baris debug
         signalDot = View(this).apply {
             background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(colorOf(Signal.NONE)) }
+            setOnClickListener {
+                debug?.visibility = if (debug?.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+            }
         }
-        header.addView(signalDot, LinearLayout.LayoutParams(dp(14), dp(14)))
-        header.addView(tv("  MLBB AI", 12f, true), LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(signalDot, LinearLayout.LayoutParams(dp(10), dp(10)))
+        header.addView(tv("  MLBB AI", 10f, true, 0xFFE9D5FF.toInt()), LinearLayout.LayoutParams(0, -2, 1f))
 
-        fun btn(label: String, onClick: () -> Unit) = tv(label, 16f).apply {
-            setPadding(dp(10), dp(2), dp(10), dp(2)); setOnClickListener { onClick() }
+        fun btn(label: String, onClick: () -> Unit) = tv(label, 12f).apply {
+            setPadding(dp(7), dp(1), dp(7), dp(1)); setOnClickListener { onClick() }
         }
-        header.addView(btn("\uD83D\uDCF7") { AnalysisBus.requestDump() })
-        header.addView(btn("\u2013") { body?.visibility = if (body?.visibility == View.VISIBLE) View.GONE else View.VISIBLE })
-        header.addView(btn("\u2715") {
+        header.addView(btn("⚡") { AnalysisBus.requestSpell() })
+        header.addView(btn("📷") { AnalysisBus.requestDump() })
+        header.addView(btn("–") { body?.visibility = if (body?.visibility == View.VISIBLE) View.GONE else View.VISIBLE })
+        header.addView(btn("✕") {
             startService(Intent(this, CaptureService::class.java).setAction(CaptureService.ACTION_STOP))
             stopSelf()
         })
 
-        action = tv("Menunggu...", 18f, true)
-        reason = tv("", 11f)
-        status = tv("", 10f, color = 0xFFCBD5E1.toInt())
+        action = tv("Menunggu...", 14f, true)
+        reason = tv("", 10f, color = 0xFFE5E7EB.toInt()).apply {
+            maxLines = 2; ellipsize = TextUtils.TruncateAt.END
+        }
+        status = tv("", 9f, color = 0xFFC4B5FD.toInt()).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        debug = tv("", 8f, color = 0xFF94A3B8.toInt()).apply { visibility = View.GONE }
         body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), 0, dp(10), dp(8))
-            addView(action); addView(reason); addView(status)
+            setPadding(dp(8), 0, dp(8), dp(6))
+            addView(action); addView(reason); addView(status); addView(debug)
         }
 
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply { cornerRadius = dp(10).toFloat(); setColor(0xE6111827.toInt()) }
+            background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat(); setColor(0xB3140A32.toInt()); setStroke(dp(1), 0x44C4B5FD)
+            }
             addView(header); addView(body)
         }
 
         val type = if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
+        // Posisi awal: kiri, di bawah minimap dan di atas joystick, supaya tidak menutup HUD game.
         params = WindowManager.LayoutParams(
-            dp(230), WindowManager.LayoutParams.WRAP_CONTENT, type,
+            dp(165), WindowManager.LayoutParams.WRAP_CONTENT, type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.TOP or Gravity.START; x = dp(8); y = dp(90) }
+        ).apply { gravity = Gravity.TOP or Gravity.START; x = dp(6); y = dp(150) }
 
         var dx = 0f; var dy = 0f; var sx = 0; var sy = 0
         header.setOnTouchListener { _, e ->
@@ -118,9 +131,11 @@ class OverlayService : Service() {
         val sig = a?.signal ?: Signal.NONE
         (signalDot?.background as? GradientDrawable)?.setColor(colorOf(sig))
         action?.text = a?.action ?: "Menunggu..."
-        action?.setTextColor(if (a == null) Color.WHITE else colorOf(sig).let { if (sig == Signal.NONE) Color.LTGRAY else it })
+        action?.setTextColor(if (a == null || sig == Signal.NONE) Color.LTGRAY else colorOf(sig))
         reason?.text = a?.reason ?: ""
-        status?.text = listOf(s.status, s.debug).filter { it.isNotBlank() }.joinToString("\n")
+        reason?.visibility = if (a?.reason.isNullOrBlank()) View.GONE else View.VISIBLE
+        status?.text = s.status
+        debug?.text = s.debug
     }
 
     override fun onDestroy() {

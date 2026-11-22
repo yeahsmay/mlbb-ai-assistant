@@ -4,13 +4,18 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.View
 import android.view.WindowInsets
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -23,55 +28,91 @@ class MainActivity : Activity() {
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
+    private fun card(color: Int = 0xAA140A32.toInt()) = GradientDrawable().apply {
+        setColor(color); cornerRadius = dp(16).toFloat(); setStroke(dp(1), 0x44FFFFFF)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val scroll = ScrollView(this).apply {
-            setBackgroundColor(0xFF101827.toInt()); clipToPadding = false; addView(root)
+            setBackgroundColor(Color.TRANSPARENT); clipToPadding = false; addView(root)
         }
         scroll.setOnApplyWindowInsetsListener { v, insets ->
             if (Build.VERSION.SDK_INT >= 30) {
                 val b = insets.getInsets(WindowInsets.Type.systemBars())
-                v.setPadding(dp(16) + b.left, dp(16) + b.top, dp(16) + b.right, dp(16) + b.bottom)
+                v.setPadding(dp(18) + b.left, dp(24) + b.top, dp(18) + b.right, dp(24) + b.bottom)
             } else {
                 @Suppress("DEPRECATION")
-                v.setPadding(dp(16) + insets.systemWindowInsetLeft, dp(16) + insets.systemWindowInsetTop,
-                    dp(16) + insets.systemWindowInsetRight, dp(16) + insets.systemWindowInsetBottom)
+                v.setPadding(dp(18) + insets.systemWindowInsetLeft, dp(24) + insets.systemWindowInsetTop,
+                    dp(18) + insets.systemWindowInsetRight, dp(24) + insets.systemWindowInsetBottom)
             }
             insets
         }
 
-        fun label(text: String, size: Float = 14f) = TextView(this).apply {
-            this.text = text; textSize = size; setTextColor(0xFFFFFFFF.toInt()); setPadding(0, dp(6), 0, dp(6))
+        fun label(text: String, size: Float = 14f, bold: Boolean = false) = TextView(this).apply {
+            this.text = text; textSize = size; setTextColor(Color.WHITE)
+            setShadowLayer(6f, 0f, 2f, 0xCC000000.toInt())
+            if (bold) setTypeface(typeface, Typeface.BOLD)
         }
-        fun button(text: String, onClick: () -> Unit) = Button(this).apply { this.text = text; setOnClickListener { onClick() } }
+        fun button(text: String, c1: Int, c2: Int, onClick: () -> Unit) = Button(this).apply {
+            this.text = text; isAllCaps = false; textSize = 15f
+            setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD)
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(c1, c2)).apply {
+                cornerRadius = dp(16).toFloat()
+            }
+            stateListAnimator = null
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) }
+            setOnClickListener { onClick() }
+        }
 
-        root.addView(label("MLBB AI ASSISTANT", 24f))
-        root.addView(label("v0.3 \u2022 Android 8\u201315 \u2022 semua proses lokal, tanpa jaringan"))
-        info = label("")
-        root.addView(info)
+        val title = label("MLBB AI ASSISTANT", 28f, true).apply { setTextColor(0xFFFFD6EC.toInt()) }
+        root.addView(title)
+        root.addView(label("v0.4  \u2022  semua proses lokal, tanpa jaringan", 12f).apply {
+            setTextColor(0xFFE9D5FF.toInt()); setPadding(0, dp(4), 0, dp(16))
+        })
 
-        root.addView(button("1. Izinkan panel melayang") {
+        info = label("", 14f, true).apply {
+            background = card(); setPadding(dp(14), dp(12), dp(14), dp(12))
+        }
+        root.addView(info, LinearLayout.LayoutParams(-1, -2))
+
+        root.addView(button("1. Izinkan panel melayang", 0xFF22D3EE.toInt(), 0xFF3B82F6.toInt()) {
             if (!Settings.canDrawOverlays(this)) {
                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             } else toast("Izin panel sudah aktif")
         })
-        root.addView(button("2. Mulai asisten (overlay + baca layar)") { start() })
-        root.addView(button("Hentikan asisten") {
+        root.addView(button("2. Mulai asisten (overlay + baca layar)", 0xFFFF5FA2.toInt(), 0xFFC026D3.toInt()) { start() })
+        root.addView(button("Hentikan asisten", 0xFFFB923C.toInt(), 0xFFEF4444.toInt()) {
             startService(Intent(this, CaptureService::class.java).setAction(CaptureService.ACTION_STOP))
             stopService(Intent(this, OverlayService::class.java))
         })
-        root.addView(label(
-            "PENTING: saat Android bertanya, pilih \"Seluruh layar\" (bukan \"Satu aplikasi\"), " +
+
+        val note = label(
+            "Saat Android bertanya, pilih \"Seluruh layar\" (bukan \"Satu aplikasi\"), " +
             "kalau tidak yang terbaca hanya aplikasi ini.\n\n" +
             "Aplikasi ini hanya membaca layar dan menampilkan saran. Tidak mengendalikan hero " +
-            "dan tidak mengirim sentuhan ke game.", 12f))
-        setContentView(scroll)
+            "dan tidak mengirim sentuhan ke game.", 12f
+        ).apply { background = card(0x88140A32.toInt()); setPadding(dp(14), dp(12), dp(14), dp(12)) }
+        root.addView(note, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(20) })
+
+        // Latar: wallpaper + lapisan gelap tipis supaya teks tetap terbaca
+        val bg = AnimeBackgroundView(this)
+        val scrim = View(this).apply { setBackgroundColor(0x44000000) }
+        val frame = FrameLayout(this).apply {
+            addView(bg, FrameLayout.LayoutParams(-1, -1))
+            addView(scrim, FrameLayout.LayoutParams(-1, -1))
+            addView(scroll, FrameLayout.LayoutParams(-1, -1))
+        }
+        setContentView(frame)
     }
 
     override fun onResume() {
         super.onResume()
-        info.text = "Izin overlay: " + (if (Settings.canDrawOverlays(this)) "AKTIF" else "belum aktif")
+        val on = Settings.canDrawOverlays(this)
+        info.text = "Izin overlay: " + (if (on) "AKTIF" else "belum aktif")
+        info.setTextColor(if (on) 0xFF86EFAC.toInt() else 0xFFFCA5A5.toInt())
     }
 
     private fun start() {
