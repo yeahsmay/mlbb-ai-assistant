@@ -15,6 +15,10 @@ data class Calibration(
     val skillLeft: Float = 0.62f, val skillTop: Float = 0.55f,
     // Lebar penuh bar HP hero (termasuk bagian kosong), pecahan lebar layar
     val heroBarMin: Float = 0.03f, val heroBarMax: Float = 0.11f,
+    // Tinggi minimal baris HP hero (pecahan tinggi layar). Minion/lingkaran jangkauan lebih tipis.
+    val heroHpMinHeight: Float = 0.009f,
+    // Lebar penuh bar HP awal (pecahan lebar layar), diukur dari rekaman 1280px: bar sendiri ~75px, musuh/teman ~94px.
+    val selfBarRef: Float = 0.059f, val enemyBarRef: Float = 0.074f, val allyBarRef: Float = 0.074f,
     val turretBarMin: Float = 0.12f,
     val barMaxHeight: Float = 0.03f,        // pecahan tinggi layar
     // Posisi bar HP hero sendiri (di atas hero, dekat tengah layar)

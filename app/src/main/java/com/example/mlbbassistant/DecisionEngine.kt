@@ -22,8 +22,9 @@ class DecisionEngine(private val historySize: Int = 3, private val minValidFrame
                 "HP hero sendiri belum terbaca stabil. Tidak ada rekomendasi.")
         }
         val hp = hps.average().toFloat()
-        val enemies = history.maxOf { it.enemyHps.size } // konservatif: ambil jumlah terbanyak
-        val team = s.alliesVisible + 1
+        // Jumlah musuh & tim diambil dari jendela frame yang SAMA (nilai terbanyak) supaya tidak saling bertentangan.
+        val enemies = history.maxOf { it.enemyHps.size }
+        val team = history.maxOf { it.alliesVisible } + 1
         val mm = s.minimapEnemyDots
         val hpPct = (hp * 100).roundToInt()
 
@@ -36,7 +37,9 @@ class DecisionEngine(private val historySize: Int = 3, private val minValidFrame
                 if (hp >= 0.5f) Advice(Signal.GREEN, "WAR", "Jumlah terlihat $team vs $enemies, HP kamu $hpPct%.")
                 else Advice(Signal.YELLOW, "WASPADA", "War $team vs $enemies tapi HP kamu hanya $hpPct%.")
             enemies >= 2 ->
-                Advice(Signal.YELLOW, "WASPADA", "$enemies musuh vs $team di pihakmu, jumlah seimbang.")
+                Advice(Signal.YELLOW, "WASPADA",
+                    "$enemies musuh vs $team di pihakmu" +
+                    (if (team > enemies) ", kamu unggul jumlah tapi tetap hati-hati." else ", jumlah seimbang."))
             enemies == 1 -> duel(hp, hpPct, s)
             mm == null ->
                 Advice(Signal.NONE, "DATA BELUM CUKUP", "Tidak ada musuh di layar, tapi minimap belum terbaca.")

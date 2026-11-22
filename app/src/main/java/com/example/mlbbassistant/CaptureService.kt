@@ -62,6 +62,9 @@ class CaptureService : Service() {
     private val ocrBusy = AtomicBoolean(false)
     private var lastOcrAt = 0L
     @Volatile private var timerText: String? = null
+    @Volatile private var timerAt = 0L
+    private var lastFrameAt = 0L
+    private val clock = SimpleDateFormat("HH:mm:ss", Locale.US)
     private var framesWithoutHud = 0
 
     @Volatile private var running = false
@@ -185,9 +188,10 @@ class CaptureService : Service() {
 
     private fun processFrame(): Long {
         ensureSize()
-        val image = reader?.acquireLatestImage() ?: return INTERVAL_ACTIVE
-        val ok = try { copyPixels(image) } finally { image.close() }
-        if (!ok) return INTERVAL_ACTIVE
+        val image = reader?.acquireLatestImage()
+        val ok = image != null && try { copyPixels(image) } finally { image.close() }
+        if (!ok) return noFrame()
+        lastFrameAt = System.currentTimeMillis()
 
         val hud = analyzer.analyze(pixels, capW, capH)
         val advice = engine.update(hud.toSnapshot())
@@ -199,11 +203,25 @@ class CaptureService : Service() {
         }
         if (AnalysisBus.consumeDump()) saveDebugFrame(hud, advice)
 
-        val status = timerText?.let { "Timer terbaca: $it" } ?: "Timer belum terbaca"
+        val fresh = timerText != null && now - timerAt < TIMER_STALE_MS
+        val status = (if (fresh) "Timer terbaca: $timerText" else "Timer belum terbaca") +
+            " | frame " + clock.format(Date(now))
         AnalysisBus.post(UiState(advice, status, hud.summary()))
 
         framesWithoutHud = if (hud.hasAnyHud()) 0 else framesWithoutHud + 1
         return if (framesWithoutHud >= 5) INTERVAL_IDLE else INTERVAL_ACTIVE
+    }
+
+    /** Tidak ada frame baru: jangan biarkan overlay menampilkan saran lama seolah masih benar. */
+    private fun noFrame(): Long {
+        val now = System.currentTimeMillis()
+        if (lastFrameAt == 0L) lastFrameAt = now
+        val idle = now - lastFrameAt
+        if (idle > NO_FRAME_MS) {
+            engine.reset()
+            AnalysisBus.post(UiState(null, "Tidak ada frame baru ${idle / 1000}d. Saran dihentikan.", ""))
+        }
+        return INTERVAL_ACTIVE
     }
 
     private fun copyPixels(image: Image): Boolean {
@@ -240,6 +258,7 @@ class CaptureService : Service() {
                 .addOnSuccessListener { res ->
                     val m = Regex("(\\d{1,2})\\s*[:.]\\s*(\\d{2})").find(res.text)
                     timerText = m?.let { "${it.groupValues[1]}:${it.groupValues[2]}" }
+                    if (timerText != null) timerAt = System.currentTimeMillis()
                 }
                 .addOnFailureListener { timerText = null }
                 .addOnCompleteListener { big.recycle(); ocrBusy.set(false) }
@@ -322,5 +341,7 @@ class CaptureService : Service() {
         private const val INTERVAL_ACTIVE = 1000L
         private const val INTERVAL_IDLE = 2500L
         private const val OCR_EVERY_MS = 5000L
+        private const val NO_FRAME_MS = 2500L
+        private const val TIMER_STALE_MS = 12000L
     }
 }

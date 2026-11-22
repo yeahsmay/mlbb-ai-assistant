@@ -5,7 +5,8 @@ import kotlin.math.min
 
 enum class BarKind { ALLY, ENEMY }
 
-class Bar(var x0: Int, var x1: Int, val y0: Int, var y1: Int, val kind: BarKind) {
+/** cls: 1 = hijau, 2 = merah, 3 = biru (HP teman ATAU bar mana). */
+class Bar(var x0: Int, var x1: Int, val y0: Int, var y1: Int, val kind: BarKind, val cls: Int = 0) {
     var fill: Float = 1f
     var fullWidth: Int = 0
     val width get() = x1 - x0 + 1
@@ -34,7 +35,10 @@ class HudResult(
 }
 
 class FrameAnalyzer(private val cal: Calibration = Calibration()) {
-    private class Run(val y: Int, val x0: Int, val x1: Int, val kind: Int)
+    private class Run(val y: Int, val x0: Int, val x1: Int, val cls: Int)
+
+    /** Lebar penuh bar HP hero (pecahan lebar layar) per kelas warna; naik otomatis bila terlihat bar lebih lebar. */
+    private val refFrac = floatArrayOf(0f, cal.selfBarRef, cal.enemyBarRef, cal.allyBarRef)
 
     private var cls = ByteArray(0)
     private var visited = BooleanArray(0)
@@ -43,8 +47,8 @@ class FrameAnalyzer(private val cal: Calibration = Calibration()) {
     private fun kindOf(c: Int): Int {
         val r = (c shr 16) and 0xFF; val g = (c shr 8) and 0xFF; val b = c and 0xFF
         if (g > 150 && g > r + 45 && g > b + 45) return 1
-        if (b > 170 && b > r + 70 && b > g + 20) return 1
         if (r > 170 && r > g + 90 && r > b + 90) return 2
+        if (b > 170 && b > r + 70 && b > g + 20) return 3
         return 0
     }
 
@@ -56,15 +60,42 @@ class FrameAnalyzer(private val cal: Calibration = Calibration()) {
     fun analyze(px: IntArray, w: Int, h: Int): HudResult {
         val mm = intArrayOf((cal.miniL * w).toInt(), (cal.miniT * h).toInt(), (cal.miniR * w).toInt(), (cal.miniB * h).toInt())
         val bars = findBars(px, w, h, mm)
-        val minW = cal.heroBarMin * w; val maxW = cal.heroBarMax * w
-        val heroBars = bars.filter { it.fullWidth >= minW && it.fullWidth <= maxW }
-        val turrets = bars.filter { it.kind == BarKind.ENEMY && it.fullWidth >= cal.turretBarMin * w }
-        val enemy = heroBars.filter { it.kind == BarKind.ENEMY }
-        var ally = heroBars.filter { it.kind == BarKind.ALLY }
+
+        // HERO = bar HP yang tinggi (>= heroHpMinHeight) DAN tepat di bawahnya ada bar MANA biru.
+        // Minion / turret / monster / angka damage / lingkaran jangkauan tidak punya bar mana,
+        // jadi tidak ikut terhitung sebagai hero.
+        val minH = max(4, (cal.heroHpMinHeight * h).toInt())
+        val maxH = max(minH + 2, (cal.barMaxHeight * h).toInt())
+        val capW = (cal.heroBarMax * w).toInt()
+        val heroes = ArrayList<Bar>()
+        val manaUsed = HashSet<Bar>()
+        for (t in bars) {
+            if (t.height < minH || t.height > maxH) continue
+            if (t.cls == 3 && t.width < 3 * t.height) continue
+            if (t in manaUsed) continue
+            val m = bars.firstOrNull { it !== t && it.cls == 3 && it !in manaUsed && isManaBelow(t, it) } ?: continue
+            manaUsed.add(m)
+            val ref = (refFrac[t.cls] * w).toInt()
+            t.fullWidth = max(t.width, ref)
+            t.fill = (t.width.toFloat() / t.fullWidth).coerceIn(0f, 1f)
+            refFrac[t.cls] = max(refFrac[t.cls], min(t.width, capW).toFloat() / w)
+            heroes.add(t)
+        }
+
+        val enemy = heroes.filter { it.cls == 2 }
+        var ally = heroes.filter { it.cls != 2 }
+
+        // Turret = bar merah lebar yang BUKAN hero. Dihitung terpisah, tidak masuk jumlah musuh.
+        val heroSet = HashSet<Bar>(heroes)
+        val turrets = bars.filter {
+            it.cls == 2 && it !in heroSet && it.height <= maxH && it.width >= 3 * it.height &&
+                trackedFullWidth(px, w, it) >= cal.turretBarMin * w
+        }
 
         val sx = cal.selfX * w; val sy = cal.selfY * h
-        val self = ally.minByOrNull { sq((it.x0 + it.x1) / 2f - sx) + sq((it.y0 + it.y1) / 2f - sy) }
-            ?.takeIf { sq((it.x0 + it.x1) / 2f - sx) + sq((it.y0 + it.y1) / 2f - sy) <= sq(cal.selfRadius * w) }
+        fun d2(b: Bar) = sq((b.x0 + b.x1) / 2f - sx) + sq((b.y0 + b.y1) / 2f - sy)
+        val self = ally.filter { it.cls == 1 }.minByOrNull { d2(it) }
+            ?.takeIf { d2(it) <= sq(cal.selfRadius * w) }
         if (self != null) ally = ally.filter { it !== self }
 
         val dots = ArrayList<IntArray>()
@@ -72,6 +103,26 @@ class FrameAnalyzer(private val cal: Calibration = Calibration()) {
         val e = if (mmOk) dots.count { it[4] == 1 } else null
         val a = if (mmOk) dots.count { it[4] == 2 } else null
         return HudResult(self, ally, enemy, turrets, e, a, mm, dots)
+    }
+
+    private fun isManaBelow(t: Bar, m: Bar): Boolean {
+        val gap = m.y0 - t.y1
+        if (gap < 0 || gap > 4) return false
+        if (m.height < 2 || m.height > t.height || m.width < 3 * m.height) return false
+        val overlap = min(t.x1, m.x1) - max(t.x0, m.x0) + 1
+        return overlap >= 0.6f * min(t.width, m.width)
+    }
+
+    /** Lebar bar + jalur gelap (bagian HP kosong) di kanannya. Dipakai hanya untuk mengenali turret. */
+    private fun trackedFullWidth(px: IntArray, w: Int, b: Bar): Int {
+        val yMid = ((b.y0 + b.y1) / 2) * w
+        var track = 0; var miss = 0; var x = b.x1 + 1
+        val limit = (cal.turretBarMin * w * 2).toInt()
+        while (x < w && track < limit) {
+            if (isTrack(px[yMid + x])) { track++; miss = 0 } else { miss++; if (miss > 2) break }
+            x++
+        }
+        return b.width + track
     }
 
     private fun sq(v: Float) = v * v
@@ -114,30 +165,15 @@ class FrameAnalyzer(private val cal: Calibration = Calibration()) {
         for (r in runs) {
             var merged = false
             for (b in bars) {
-                if (b.kind.ordinal + 1 != r.kind || r.y - b.y1 > 1 || r.y < b.y1) continue
+                if (b.cls != r.cls || r.y - b.y1 > 1 || r.y < b.y1) continue
                 val overlap = min(b.x1, r.x1) - max(b.x0, r.x0) + 1
                 if (overlap >= 0.5f * min(b.width, r.x1 - r.x0 + 1)) {
                     b.x0 = min(b.x0, r.x0); b.x1 = max(b.x1, r.x1); b.y1 = r.y; merged = true; break
                 }
             }
-            if (!merged) bars.add(Bar(r.x0, r.x1, r.y, r.y, if (r.kind == 1) BarKind.ALLY else BarKind.ENEMY))
+            if (!merged) bars.add(Bar(r.x0, r.x1, r.y, r.y, if (r.cls == 2) BarKind.ENEMY else BarKind.ALLY, r.cls))
         }
-        val maxH = max(3, (cal.barMaxHeight * h).toInt())
-        val out = ArrayList<Bar>()
-        for (b in bars) {
-            if (b.height > maxH || b.width < 3 * b.height) continue
-            val yMid = ((b.y0 + b.y1) / 2) * w
-            var track = 0; var miss = 0; var x = b.x1 + 1
-            val limit = (cal.turretBarMin * w * 2).toInt()
-            while (x < w && track < limit) {
-                if (isTrack(px[yMid + x])) { track++; miss = 0 } else { miss++; if (miss > 2) break }
-                x++
-            }
-            b.fullWidth = b.width + track
-            b.fill = b.width.toFloat() / b.fullWidth
-            out.add(b)
-        }
-        return out
+        return bars
     }
 
     private fun analyzeMinimap(px: IntArray, w: Int, h: Int, mm: IntArray, dots: MutableList<IntArray>): Boolean {
