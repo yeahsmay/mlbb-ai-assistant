@@ -5,11 +5,12 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.graphics.*
+import android.graphics.drawable.GradientDrawable
 import android.os.IBinder
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -17,12 +18,22 @@ class OverlayService : Service() {
     private lateinit var windowManager: WindowManager
     private var overlayView: OverlayView? = null
     private var panelView: View? = null
+    
     private var statusText: TextView? = null
     private var counterText: TextView? = null
+    private var contentLayout: LinearLayout? = null
+    private var toggleBtn: TextView? = null
     
     private var currentStatus = "Menunggu pertandingan..."
     private var currentCounter = "Belum ada data counter."
     private var showCounter = false
+
+    // Variabel buat geser-geser (Drag)
+    private var initialX = 0
+    private var initialY = 0
+    private var initialTouchX = 0f
+    private var initialTouchY = 0f
+    private lateinit var panelParams: WindowManager.LayoutParams
 
     companion object {
         var instance: OverlayService? = null
@@ -51,7 +62,7 @@ class OverlayService : Service() {
         instance = this
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
-        // Overlay Gambar (Kotak Merah)
+        // Kotak Merah Vision AI
         overlayView = OverlayView(this)
         val drawParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -64,84 +75,119 @@ class OverlayService : Service() {
         )
         windowManager.addView(overlayView, drawParams)
 
-        // Panel UI
         setupPanel()
     }
 
     private fun setupPanel() {
         val mainLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#CC1E1E2E"))
-            setPadding(30, 30, 30, 30)
-            layoutParams = LinearLayout.LayoutParams(700, LinearLayout.LayoutParams.WRAP_CONTENT)
+            setPadding(30, 20, 30, 30)
+            // Dark Glass Effect
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#CC0B0E14")) // Hitam kebiruan transparan
+                cornerRadius = 40f
+                setStroke(4, Color.parseColor("#00E5FF")) // Garis pinggir Neon Cyan
+            }
         }
 
-        // --- HEADER BUTTONS ---
+        // --- HEADER (Buat digeser & Tombol Toggle) ---
+        val headerLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(10, 10, 10, 10)
+        }
+
+        toggleBtn = TextView(this).apply {
+            text = "⚡ BUKA AI"
+            setTextColor(Color.parseColor("#00E5FF"))
+            textSize = 14f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(20, 10, 20, 10)
+            setOnClickListener { toggleMenu() }
+        }
+        
+        headerLayout.addView(toggleBtn)
+
+        // Listener buat geser panel
+        headerLayout.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    initialX = panelParams.x
+                    initialY = panelParams.y
+                    initialTouchX = event.rawX
+                    initialTouchY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    panelParams.x = initialX + (event.rawX - initialTouchX).toInt()
+                    panelParams.y = initialY + (event.rawY - initialTouchY).toInt()
+                    windowManager.updateViewLayout(panelView, panelParams)
+                    true
+                }
+                else -> false
+            }
+        }
+
+        // --- CONTENT (Tombol & Teks) ---
+        contentLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE // Sembunyi di awal
+            setPadding(10, 10, 10, 10)
+        }
+
         val btnLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        val btnStatus = Button(this).apply {
-            text = "Status"
-            textSize = 10f
-            setOnClickListener {
-                showCounter = false
-                statusText?.visibility = View.VISIBLE
-                counterText?.visibility = View.GONE
-            }
+        val btnStatus = createSmallButton("Status") {
+            showCounter = false
+            statusText?.visibility = View.VISIBLE
+            counterText?.visibility = View.GONE
         }
-
-        val btnCounter = Button(this).apply {
-            text = "Counter"
-            textSize = 10f
-            setOnClickListener {
-                showCounter = true
-                statusText?.visibility = View.GONE
-                counterText?.visibility = View.VISIBLE
-                counterText?.text = currentCounter
-            }
+        val btnCounter = createSmallButton("Counter") {
+            showCounter = true
+            statusText?.visibility = View.GONE
+            counterText?.visibility = View.VISIBLE
+            counterText?.text = currentCounter
         }
-
-        val btnMute = Button(this).apply {
-            text = "Mute"
-            textSize = 10f
-            setOnClickListener {
-                val isMuted = VoiceCoach.toggleMute()
-                text = if (isMuted) "Unmute" else "Mute"
-            }
+        val btnMute = createSmallButton("Mute") {
+            val isMuted = VoiceCoach.toggleMute()
+            (it as TextView).text = if (isMuted) "Unmute" else "Mute"
         }
 
         btnLayout.addView(btnStatus)
         btnLayout.addView(btnCounter)
         btnLayout.addView(btnMute)
 
-        // --- TEXT AREA ---
         statusText = TextView(this).apply {
             text = currentStatus
             setTextColor(Color.WHITE)
             textSize = 14f
-            setPadding(0, 15, 0, 0)
+            setPadding(0, 20, 0, 0)
         }
 
         counterText = TextView(this).apply {
             text = currentCounter
-            setTextColor(Color.CYAN)
+            setTextColor(Color.parseColor("#00E5FF"))
             textSize = 14f
-            setPadding(0, 15, 0, 0)
+            setPadding(0, 20, 0, 0)
             visibility = View.GONE
         }
 
-        mainLayout.addView(btnLayout)
-        mainLayout.addView(statusText)
-        mainLayout.addView(counterText)
+        contentLayout?.addView(btnLayout)
+        contentLayout?.addView(statusText)
+        contentLayout?.addView(counterText)
+
+        mainLayout.addView(headerLayout)
+        mainLayout.addView(contentLayout)
 
         // Parameter Panel (Bisa disentuh)
-        val panelParams = WindowManager.LayoutParams(
+        panelParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, // Sengaja TANPA FLAG_NOT_TOUCHABLE
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -150,6 +196,37 @@ class OverlayService : Service() {
 
         panelView = mainLayout
         windowManager.addView(panelView, panelParams)
+    }
+
+    private fun createSmallButton(text: String, onClick: (View) -> Unit): TextView {
+        return TextView(this).apply {
+            this.text = text
+            setTextColor(Color.parseColor("#00E5FF"))
+            textSize = 12f
+            setPadding(30, 15, 30, 15)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#3300E5FF")) // Background Cyan transparan
+                cornerRadius = 20f
+                setStroke(2, Color.parseColor("#00E5FF"))
+            }
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            params.setMargins(0, 0, 15, 0)
+            layoutParams = params
+            setOnClickListener(onClick)
+        }
+    }
+
+    private fun toggleMenu() {
+        if (contentLayout?.visibility == View.VISIBLE) {
+            contentLayout?.visibility = View.GONE
+            toggleBtn?.text = "⚡ BUKA AI"
+        } else {
+            contentLayout?.visibility = View.VISIBLE
+            toggleBtn?.text = "⚡ TUTUP AI"
+        }
     }
 
     override fun onDestroy() {
@@ -161,7 +238,6 @@ class OverlayService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    // (Class OverlayView gambar kotak merah tetap sama persis kayak sebelumnya)
     class OverlayView(context: Context) : View(context) {
         private var predictions: List<PredictedEnemy> = emptyList()
         private var minimapRect: IntArray = IntArray(4)
