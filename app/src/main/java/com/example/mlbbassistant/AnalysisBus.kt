@@ -1,27 +1,49 @@
+// language: Kotlin, file: AnalysisBus.kt
 package com.example.mlbbassistant
 
-import android.os.Handler
-import android.os.Looper
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
-/** Jembatan in-process CaptureService -> OverlayService (tanpa broadcast, tanpa jaringan). */
 object AnalysisBus {
-    private val main = Handler(Looper.getMainLooper())
-    @Volatile private var listener: ((UiState) -> Unit)? = null
-    @Volatile private var last: UiState? = null
-    private val dump = AtomicBoolean(false)
-    private val spellTaps = AtomicInteger(0)
+    private val _uiState = MutableStateFlow<UIState?>(null)
+    val uiState: StateFlow<UIState?> = _uiState.asStateFlow()
 
-    fun setListener(l: ((UiState) -> Unit)?) {
-        listener = l
-        if (l != null) last?.let { l(it) }
+    private val _statusText = MutableStateFlow("Menunggu pertandingan...")
+    val statusText: StateFlow<String> = _statusText.asStateFlow()
+
+    private var shouldDump = false
+    private var spellTapCount = 0
+
+    // Fungsi buat ngirim data ke UI (dipanggil dari CaptureService)
+    fun post(state: UIState) {
+        _uiState.value = state
     }
-    fun post(state: UiState) { last = state; main.post { listener?.invoke(state) } }
-    fun status(text: String) = post(UiState(null, text, ""))
-    fun requestDump() = dump.set(true)
-    fun consumeDump(): Boolean = dump.getAndSet(false)
-    /** Tombol ⚡ di overlay: musuh baru saja memakai spell. */
-    fun requestSpell() { spellTaps.incrementAndGet() }
-    fun consumeSpellTaps(): Int = spellTaps.getAndSet(0)
+
+    // Fungsi buat update status teks
+    fun status(text: String) {
+        _statusText.value = text
+    }
+
+    // Fungsi buat fitur debug
+    fun requestDump() {
+        shouldDump = true
+    }
+
+    fun consumeDump(): Boolean {
+        val result = shouldDump
+        shouldDump = false
+        return result
+    }
+
+    // Fungsi buat hitung cooldown spell
+    fun tapSpell() {
+        spellTapCount++
+    }
+
+    fun consumeSpellTaps(): Int {
+        val result = spellTapCount
+        spellTapCount = 0
+        return result
+    }
 }
