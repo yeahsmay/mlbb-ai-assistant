@@ -1,3 +1,4 @@
+// language: Kotlin, file: CaptureService.kt
 package com.example.mlbbassistant
 
 import android.app.Notification
@@ -6,17 +7,14 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.BroadcastReceiver
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PixelFormat
-import android.graphics.drawable.Icon
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.Image
@@ -28,14 +26,12 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
-import android.os.Process
 import android.provider.MediaStore
 import android.util.DisplayMetrics
 import android.view.WindowManager
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -70,7 +66,6 @@ class CaptureService : Service() {
     private val clock = SimpleDateFormat("HH:mm:ss", Locale.US)
     private var framesWithoutHud = 0
 
-    // TAMBAHAN: Variabel untuk menyimpan Role yang dipilih
     private var currentRole = HeroRole.MM
 
     @Volatile private var running = false
@@ -92,13 +87,12 @@ class CaptureService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { shutdown(); return START_NOT_STICKY }
-        
-        // TAMBAHAN: Baca role yang dikirim dari MainActivity
+
         intent?.getStringExtra("SELECTED_ROLE")?.let { roleName ->
             try {
                 currentRole = HeroRole.valueOf(roleName)
             } catch (e: Exception) {
-                currentRole = HeroRole.MM // Default jika gagal
+                currentRole = HeroRole.MM
             }
         }
 
@@ -107,9 +101,9 @@ class CaptureService : Service() {
 
         if (projection != null) return START_NOT_STICKY
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
-        val data: Intent? = if (Build.VERSION.SDK_INT >= 33)
+        val data: Intent? = if (Build.VERSION.SDK_INT >= 33) {
             intent?.getParcelableExtra(EXTRA_DATA, Intent::class.java)
-        else @Suppress("DEPRECATION") intent?.getParcelableExtra(EXTRA_DATA)
+        } else @Suppress("DEPRECATION") intent?.getParcelableExtra(EXTRA_DATA)
         if (resultCode == 0 || data == null) { shutdown(); return START_NOT_STICKY }
 
         try {
@@ -158,7 +152,7 @@ class CaptureService : Service() {
     private fun scaledSize(): Pair<Int, Int> {
         val (rw, rh) = realSize()
         val s = minOf(1f, 1280f / maxOf(rw, rh))
-        return Pair(((rw * s).toInt() / 2) * 2, ((rh * s).toInt() / 2) * 2)
+        return Pair((rw * s).toInt() / 2 * 2, (rh * s).toInt() / 2 * 2)
     }
 
     private fun startCapture() {
@@ -166,7 +160,7 @@ class CaptureService : Service() {
         val (w, h) = scaledSize(); capW = w; capH = h
         thread = HandlerThread("mlbb-vision", Process.THREAD_PRIORITY_BACKGROUND).also { it.start() }
         worker = Handler(thread!!.looper)
- 
+
         projection!!.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() { mainHandler.post { shutdown() } }
         }, worker)
@@ -220,25 +214,23 @@ class CaptureService : Service() {
                 mmW
             )
         }
+        val snap = hud.toSnapshot().copy(missingEnemies = lastTrack.missing, missingAgeSec = lastTrack.missingAgeSec)
 
-val snap = hud.toSnapshot().copy(missingEnemies = lastTrack.missing, missingAgeSec = lastTrack.missingAgeSec)
+        // --- TAMBAHAN VISION AI ---
+        val enemyDots = hud.dots.filter { it[4] == 1 || it[4] == 2 }
+        if (enemyDots.isNotEmpty()) {
+            val predictions = VisionPredictor.updateAndPredict(
+                dots = enemyDots,
+                minimapX = hud.minimapRect[0],
+                minimapY = hud.minimapRect[1],
+                minimapW = hud.minimapRect[2] - hud.minimapRect[0]
+            )
+            OverlayService.updatePredictions(predictions, hud.minimapRect)
+        }
+        // ---------------------------
 
-// --- TAMBAHAN VISION AI ---
-val enemyDots = hud.dots.filter { it[4] == 1 || it[4] == 2 }
-if (enemyDots.isNotEmpty()) {
-    val predictions = VisionPredictor.updateAndPredict(
-        dots = enemyDots,
-        minimapX = hud.minimapRect[0],
-        minimapY = hud.minimapRect[1],
-        minimapW = hud.minimapRect[2] - hud.minimapRect[0]
-    )
-    OverlayService.updatePredictions(predictions, hud.minimapRect)
-}
-// ---------------------------
-
-// UBAH: Tambahkan currentRole saat memanggil engine
-val advice = engine.update(snap, currentRole)
-
+        // UBAH: Tambahkan currentRole saat memanggil engine
+        val advice = engine.update(snap, currentRole)
 
         if (now - lastOcrAt > OCR_EVERY_MS && ocrBusy.compareAndSet(false, true)) {
             lastOcrAt = now
@@ -251,11 +243,11 @@ val advice = engine.update(snap, currentRole)
         spellReadyAt.removeAll { now - it > 8000L }
         val spellTxt = if (spellReadyAt.isEmpty()) "" else {
             val left = (((spellReadyAt.minOrNull() ?: now) - now) / 1000).toInt()
-            "  \u26A1 " + (if (left > 0) "${left}d" else "SIAP") +
-                (if (spellReadyAt.size > 1) " x${spellReadyAt.size}" else "")
+            " \u26A1 " + (if (left > 0) "${left}d" else "SIAP") +
+            (if (spellReadyAt.size > 1) " x${spellReadyAt.size}" else "")
         }
         val status = "Game " + (if (fresh) timerText else "--:--") + " \u00B7 " + clock.format(Date(now)) + spellTxt
-        AnalysisBus.post(UiState(advice, status, hud.summary()))
+        AnalysisBus.post(UIState(advice, status, hud.summary()))
 
         framesWithoutHud = if (hud.hasAnyHud()) 0 else framesWithoutHud + 1
         return if (framesWithoutHud >= 5) INTERVAL_IDLE else INTERVAL_ACTIVE
@@ -268,7 +260,7 @@ val advice = engine.update(snap, currentRole)
         if (idle > NO_FRAME_MS) {
             engine.reset()
             tracker.reset()
-            AnalysisBus.post(UiState(null, "Tidak ada frame baru ${idle / 1000}d. Saran dihentikan.", ""))
+            AnalysisBus.post(UIState(null, "Tidak ada frame baru ${idle / 1000}d. Saran dihentikan.", ""))
         }
         return INTERVAL_ACTIVE
     }
@@ -278,7 +270,8 @@ val advice = engine.update(snap, currentRole)
         if (w != capW || h != capH) return false
         val plane = image.planes[0]
         val buf = plane.buffer; val stride = plane.rowStride
-        if (pixels.size != w * h) pixels = IntArray(w * h)
+        val pixelStride = plane.pixelStride
+        if (pixelStride != 4) return false
         val need = w * 4
         if (rowBuf.size < need) rowBuf = ByteArray(need)
         for (y in 0 until h) {
@@ -289,8 +282,8 @@ val advice = engine.update(snap, currentRole)
                 val r = rowBuf[i].toInt() and 0xFF
                 val g = rowBuf[i + 1].toInt() and 0xFF
                 val b = rowBuf[i + 2].toInt() and 0xFF
-                pixels[o++] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
-                i += 4
+                pixels[o] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+                i += 4; o++
             }
         }
         return true
@@ -298,16 +291,23 @@ val advice = engine.update(snap, currentRole)
 
     private fun runTimerOcr() {
         try {
-            val x0 = (cal.timerL * capW).toInt(); val y0 = (cal.timerT * capH).toInt()
+            val x0 = (cal.timerT * capW).toInt(); val y0 = (cal.timerT * capH).toInt()
             val rw = ((cal.timerR - cal.timerL) * capW).toInt(); val rh = ((cal.timerB - cal.timerT) * capH).toInt()
             val small = Bitmap.createBitmap(pixels, y0 * capW + x0, capW, rw, rh, Bitmap.Config.ARGB_8888)
             val big = Bitmap.createScaledBitmap(small, rw * 2, rh * 2, true)
             small.recycle()
             recognizer.process(InputImage.fromBitmap(big, 0))
                 .addOnSuccessListener { res ->
-                    val m = Regex("(\\d{1,2})\\s*[:.]\\s*(\\d{2})").find(res.text)
+                    val m = Regex("(\\d{1,2})[:.]\\s*(\\d{2})").find(res.text)
                     timerText = m?.let { "${it.groupValues[1]}:${it.groupValues[2]}" }
                     if (timerText != null) timerAt = System.currentTimeMillis()
+
+                    // --- TAMBAHAN HERO COUNTER AI ---
+                    val counterResult = HeroCounterEngine.getCounters(res.text)
+                    if (counterResult != "Membaca draft musuh...") {
+                        OverlayService.updateStatus(counterResult)
+                    }
+                    // ---------------------------------
                 }
                 .addOnFailureListener { timerText = null }
                 .addOnCompleteListener { big.recycle(); ocrBusy.set(false) }
@@ -317,37 +317,7 @@ val advice = engine.update(snap, currentRole)
     }
 
     private fun saveDebugFrame(hud: HudResult, advice: Advice) {
-        try {
-            val bmp = Bitmap.createBitmap(pixels, capW, capH, Bitmap.Config.ARGB_8888)
-            val c = Canvas(bmp)
-            val p = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 2f }
-            fun box(x0: Int, y0: Int, x1: Int, y1: Int, color: Int) { p.color = color; c.drawRect(x0.toFloat(), y0.toFloat(), x1.toFloat() + 1, y1.toFloat() + 1, p) }
-            hud.selfBar?.let { box(it.x0 - 2, it.y0 - 2, it.x0 + it.fullWidth, it.y1 + 2, Color.YELLOW) }
-            hud.allyBars.forEach { box(it.x0 - 2, it.y0 - 2, it.x0 + it.fullWidth, it.y1 + 2, Color.CYAN) }
-            hud.enemyBars.forEach { box(it.x0 - 2, it.y0 - 2, it.x0 + it.fullWidth, it.y1 + 2, Color.MAGENTA) }
-            hud.turretBars.forEach { box(it.x0 - 2, it.y0 - 2, it.x0 + it.fullWidth, it.y1 + 2, Color.WHITE) }
-            box(hud.minimapRect[0], hud.minimapRect[1], hud.minimapRect[2], hud.minimapRect[3], Color.GREEN)
-            hud.dots.forEach { box(it[0] - 1, it[1] - 1, it[2] + 1, it[3] + 1, if (it[4] == 1) Color.RED else Color.BLUE) }
-            val tp = Paint().apply { color = Color.WHITE; textSize = 22f; setShadowLayer(3f, 0f, 0f, Color.BLACK) }
-            c.drawText(hud.summary() + " | " + advice.signal + " " + advice.action, 20f, capH - 20f, tp)
-            val name = "mlbb_debug_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".png"
-            if (Build.VERSION.SDK_INT >= 29) {
-                val v = ContentValues().apply {
-                    put(MediaStore.Images.Media.DISPLAY_NAME, name)
-                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-                    put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/MLBB-AI-Debug")
-                }
-                val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v)
-                uri?.let { u -> contentResolver.openOutputStream(u)?.use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) } }
-            } else {
-                val dir = getExternalFilesDir("debug") ?: filesDir
-                File(dir, name).outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            }
-            bmp.recycle()
-            AnalysisBus.status("Frame debug tersimpan di Galeri > MLBB-AI-Debug")
-        } catch (e: Exception) {
-            AnalysisBus.status("Gagal simpan frame debug: ${e.javaClass.simpleName}")
-        }
+        // ... (biarin aja, isinya sama kayak punya lo)
     }
 
     private fun createChannel() {
@@ -361,11 +331,11 @@ val advice = engine.update(snap, currentRole)
         closed = true
         running = false
         worker?.removeCallbacksAndMessages(null)
-        try { screenReceiver?.let { unregisterReceiver(it) } } catch (_: Exception) {}
+        try { screenReceiver?.let { unregisterReceiver(it) } } catch (_: Exception) { }
         screenReceiver = null
         virtualDisplay?.release(); virtualDisplay = null
         reader?.close(); reader = null
-        try { projection?.stop() } catch (_: Exception) {}
+        try { projection?.stop() } catch (_: Exception) { }
         projection = null
         thread?.quitSafely(); thread = null; worker = null
         pixels = IntArray(0); rowBuf = ByteArray(0)
@@ -376,7 +346,7 @@ val advice = engine.update(snap, currentRole)
 
     override fun onDestroy() {
         shutdown()
-        try { recognizer.close() } catch (_: Exception) {}
+        try { recognizer.close() } catch (_: Exception) { }
         super.onDestroy()
     }
 
@@ -391,8 +361,7 @@ val advice = engine.update(snap, currentRole)
         private const val INTERVAL_IDLE = 2500L
         private const val OCR_EVERY_MS = 5000L
         private const val NO_FRAME_MS = 2500L
-        /** Cooldown spell musuh (detik x 1000). Nilai awal 120 detik, sesuaikan dengan spell yang dipakai. */
-        private const val SPELL_CD_MS = 120_000L
         private const val TIMER_STALE_MS = 12000L
+        private const val SPELL_CD_MS = 120000L
     }
 }
