@@ -23,3 +23,10 @@ data class Advice(
 )
 
 data class UiState(val advice: Advice?, val status: String, val debug: String)
+enum class HeroRole {
+    MM,
+    EXP,
+    MID,
+    JUNGLER,
+    ROAM
+}
