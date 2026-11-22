@@ -2,17 +2,13 @@ package com.example.mlbbassistant
 
 import kotlin.math.roundToInt
 
-/**
- * Mesin keputusan murni (tanpa Android) -> bisa diuji unit test.
- * Prinsip: bila data tidak cukup -> Signal.NONE, TIDAK menebak.
- * Estimasi duel hanya memakai HP (level & item belum terbaca) dan diberi label kasar.
- */
 class DecisionEngine(private val historySize: Int = 3, private val minValidFrames: Int = 2) {
     private val history = ArrayDeque<Snapshot>()
 
     fun reset() = history.clear()
 
-    fun update(s: Snapshot): Advice {
+    // UBAH: Tambahkan parameter 'role' (default ke MM agar kode lama tidak error jika dipanggil tanpa role)
+    fun update(s: Snapshot, role: HeroRole = HeroRole.MM): Advice {
         history.addLast(s)
         while (history.size > historySize) history.removeFirst()
 
@@ -22,12 +18,12 @@ class DecisionEngine(private val historySize: Int = 3, private val minValidFrame
                 "HP hero sendiri belum terbaca stabil. Tidak ada rekomendasi.")
         }
         val hp = hps.average().toFloat()
-        // Jumlah musuh & tim diambil dari jendela frame yang SAMA (nilai terbanyak) supaya tidak saling bertentangan.
         val enemies = history.maxOf { it.enemyHps.size }
         val team = history.maxOf { it.alliesVisible } + 1
         val mm = s.minimapEnemyDots
         val hpPct = (hp * 100).roundToInt()
 
+        // UBAH: Logika Dasar (General) tetap sama, tapi kita selipkan pengecekan Role
         var advice: Advice = when {
             hp < 0.30f && enemies >= 1 ->
                 Advice(Signal.RED, "MUNDUR", "HP kamu $hpPct% dan ada $enemies musuh terlihat.")
@@ -40,7 +36,17 @@ class DecisionEngine(private val historySize: Int = 3, private val minValidFrame
                 Advice(Signal.YELLOW, "WASPADA",
                     "$enemies musuh vs $team di pihakmu" +
                     (if (team > enemies) ", kamu unggul jumlah tapi tetap hati-hati." else ", jumlah seimbang."))
-            enemies == 1 -> duel(hp, hpPct, s)
+            
+            // TAMBAHAN: Logika Spesifik per Role saat 1 vs 1
+            enemies == 1 -> {
+                when (role) {
+                    HeroRole.ROAM -> Advice(Signal.YELLOW, "ROTASI", "Kamu Roam, jangan duel 1v1 lama. Bantu lane lain atau cek map.")
+                    HeroRole.JUNGLER -> Advice(Signal.YELLOW, "FARMING", "Kamu Jungler, prioritas ambil buff/turtle/lord daripada duel tanpa untung.")
+                    else -> duel(hp, hpPct, s) // MM, EXP, MID tetap menggunakan logika duel lama
+                }
+            }
+            
+            // TAMBAHAN: Logika Spesifik per Role jika tidak ada musuh
             s.missingEnemies > 0 ->
                 Advice(Signal.YELLOW, "WASPADA",
                     "${s.missingEnemies} musuh hilang dari minimap" +
@@ -49,13 +55,17 @@ class DecisionEngine(private val historySize: Int = 3, private val minValidFrame
                 Advice(Signal.NONE, "DATA BELUM CUKUP", "Tidak ada musuh di layar, tapi minimap belum terbaca.")
             mm == 0 ->
                 Advice(Signal.BLUE, "FARMING",
-                    if (hp >= 0.5f) "Tidak ada musuh terlihat di layar/minimap. Musuh di fog tetap tidak terlihat."
+                    if (hp >= 0.5f) {
+                        if (role == HeroRole.ROAM) "Tidak ada musuh. Sebagai Roam, bantu buka map atau tanking."
+                        else "Tidak ada musuh terlihat di layar/minimap. Musuh di fog tetap tidak terlihat."
+                    }
                     else "Tidak ada musuh terlihat. HP $hpPct%: isi HP dulu.")
             (mm ?: 0) >= 3 ->
                 Advice(Signal.YELLOW, "WASPADA", "$mm ikon musuh di minimap: kemungkinan rotasi/war.")
             else ->
                 Advice(Signal.YELLOW, "WASPADA", "$mm ikon musuh di minimap.")
         }
+        
         if (s.enemyTurretVisible && advice.signal == Signal.GREEN) {
             advice = advice.copy(signal = Signal.YELLOW,
                 reason = advice.reason + " Turret musuh terlihat: jangan kejar ke bawah turret.")
