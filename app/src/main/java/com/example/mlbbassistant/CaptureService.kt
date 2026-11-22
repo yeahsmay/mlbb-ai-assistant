@@ -70,6 +70,9 @@ class CaptureService : Service() {
     private val clock = SimpleDateFormat("HH:mm:ss", Locale.US)
     private var framesWithoutHud = 0
 
+    // TAMBAHAN: Variabel untuk menyimpan Role yang dipilih
+    private var currentRole = HeroRole.MM
+
     @Volatile private var running = false
     @Volatile private var screenOn = true
     private var screenReceiver: BroadcastReceiver? = null
@@ -89,6 +92,16 @@ class CaptureService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { shutdown(); return START_NOT_STICKY }
+        
+        // TAMBAHAN: Baca role yang dikirim dari MainActivity
+        intent?.getStringExtra("SELECTED_ROLE")?.let { roleName ->
+            try {
+                currentRole = HeroRole.valueOf(roleName)
+            } catch (e: Exception) {
+                currentRole = HeroRole.MM // Default jika gagal
+            }
+        }
+
         createChannel()
         startForegroundCompat()
 
@@ -208,7 +221,9 @@ class CaptureService : Service() {
             )
         }
         val snap = hud.toSnapshot().copy(missingEnemies = lastTrack.missing, missingAgeSec = lastTrack.missingAgeSec)
-        val advice = engine.update(snap)
+        
+        // UBAH: Tambahkan currentRole saat memanggil engine
+        val advice = engine.update(snap, currentRole)
 
         if (now - lastOcrAt > OCR_EVERY_MS && ocrBusy.compareAndSet(false, true)) {
             lastOcrAt = now
@@ -231,7 +246,6 @@ class CaptureService : Service() {
         return if (framesWithoutHud >= 5) INTERVAL_IDLE else INTERVAL_ACTIVE
     }
 
-    /** Tidak ada frame baru: jangan biarkan overlay menampilkan saran lama seolah masih benar. */
     private fun noFrame(): Long {
         val now = System.currentTimeMillis()
         if (lastFrameAt == 0L) lastFrameAt = now
