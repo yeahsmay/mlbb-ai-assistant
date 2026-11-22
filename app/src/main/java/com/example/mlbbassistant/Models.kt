@@ -30,9 +30,3 @@ enum class HeroRole {
     JUNGLER,
     ROAM
 }
-
-data class UIState(
-    val advice: Advice?,
-    val status: String,
-    val debug: String
-)
