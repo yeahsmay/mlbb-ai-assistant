@@ -9,14 +9,13 @@ import android.os.IBinder
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 
 class OverlayService : Service() {
     private lateinit var windowManager: WindowManager
     private var overlayView: OverlayView? = null
-    private var panelView: View? = null // Buat nampung UI kotak melayang
+    private var panelView: View? = null
 
     companion object {
         var instance: OverlayService? = null
@@ -25,10 +24,9 @@ class OverlayService : Service() {
             instance?.overlayView?.updateData(predictions, minimapRect)
         }
         
-        // Fungsi opsional kalau lo mau update teks di panel dari CaptureService
         fun updateStatus(text: String) {
             instance?.let { service ->
-                service.panelView?.findViewById<TextView>(1)?.text = text
+                service.panelView?.findViewById<TextView>(2)?.text = text
             }
         }
     }
@@ -38,7 +36,7 @@ class OverlayService : Service() {
         instance = this
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
-        // 1. SETUP OVERLAY GAMBAR (Kotak Merah)
+        // Setup Kotak Merah (Bounding Box)
         overlayView = OverlayView(this)
         val drawParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -51,35 +49,36 @@ class OverlayService : Service() {
         )
         windowManager.addView(overlayView, drawParams)
 
-        // 2. SETUP PANEL UI (Teks Data)
+        // Setup Panel Teks AI
         setupPanel()
     }
 
     private fun setupPanel() {
-        // Bikin layout kotak melayang pakai kode langsung
         val panelLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#CC1E1E2E")) // Warna biru gelap transparan
-            setPadding(30, 30, 30, 30)
+            setBackgroundColor(Color.parseColor("#CC1E1E2E")) // Biru gelap transparan
+            setPadding(40, 40, 40, 40)
         }
 
         val titleText = TextView(this).apply {
-            id = 1 // ID buat update teks nanti
-            text = "MLBB AI\nDATA BELUM CUKUP"
-            setTextColor(Color.WHITE)
-            textSize = 16f
+            id = 1
+            text = "MLBB AI"
+            setTextColor(Color.CYAN)
+            textSize = 18f
+            setTypeface(typeface, Typeface.BOLD)
         }
 
         val subText = TextView(this).apply {
-            text = "HP hero sendiri belum terbaca stabil."
-            setTextColor(Color.LTGRAY)
-            textSize = 12f
+            id = 2
+            text = "Membaca draft pick..."
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            setPadding(0, 20, 0, 0)
         }
 
         panelLayout.addView(titleText)
         panelLayout.addView(subText)
 
-        // Parameter posisi panel (pojok kiri atas)
         val panelParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -107,6 +106,8 @@ class OverlayService : Service() {
 
     class OverlayView(context: Context) : View(context) {
         private var predictions: List<PredictedEnemy> = emptyList()
+        private var minimapRect: IntArray = IntArray(4)
+        
         private val paint = Paint().apply {
             color = Color.RED
             style = Paint.Style.STROKE
@@ -116,6 +117,7 @@ class OverlayService : Service() {
 
         fun updateData(preds: List<PredictedEnemy>, rect: IntArray) {
             this.predictions = preds
+            this.minimapRect = rect
             postInvalidate()
         }
 
@@ -129,12 +131,15 @@ class OverlayService : Service() {
                 val px = pred.predX
                 val py = pred.predY
 
+                // 1. Titik posisi sekarang
                 paint.color = Color.RED
                 canvas.drawCircle(cx, cy, 15f, paint)
 
+                // 2. Kotak prediksi
                 paint.color = Color.argb((pred.confidence * 200).toInt(), 255, 0, 0)
                 canvas.drawRect(px - 25f, py - 25f, px + 25f, py + 25f, paint)
                 
+                // 3. Garis vektor
                 paint.color = Color.argb(100, 255, 0, 0)
                 canvas.drawLine(cx, cy, px, py, paint)
             }
