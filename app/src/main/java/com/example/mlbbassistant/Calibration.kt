@@ -9,10 +9,11 @@ class Calibration {
     val timerR = 0.55f
 
     // --- POSISI MINIMAP (Kiri Atas) ---
-    val minL = 0.01f
-    val minT = 0.02f
-    val minR = 0.18f
-    val minB = 0.35f
+    // PAKAI 'mini' BUKAN 'min'
+    val miniL = 0.01f
+    val miniT = 0.02f
+    val miniR = 0.18f
+    val miniB = 0.35f
 
     // --- WARNA REFERENSI (Threshold 0.0 - 1.0) ---
     val selfBarRef = 0.8f
