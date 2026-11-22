@@ -166,7 +166,7 @@ class CaptureService : Service() {
         val (w, h) = scaledSize(); capW = w; capH = h
         thread = HandlerThread("mlbb-vision", Process.THREAD_PRIORITY_BACKGROUND).also { it.start() }
         worker = Handler(thread!!.looper)
-
+ 
         projection!!.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() { mainHandler.post { shutdown() } }
         }, worker)
@@ -220,10 +220,25 @@ class CaptureService : Service() {
                 mmW
             )
         }
-        val snap = hud.toSnapshot().copy(missingEnemies = lastTrack.missing, missingAgeSec = lastTrack.missingAgeSec)
-        
-        // UBAH: Tambahkan currentRole saat memanggil engine
-        val advice = engine.update(snap, currentRole)
+
+val snap = hud.toSnapshot().copy(missingEnemies = lastTrack.missing, missingAgeSec = lastTrack.missingAgeSec)
+
+// --- TAMBAHAN VISION AI ---
+val enemyDots = hud.dots.filter { it[4] == 1 || it[4] == 2 }
+if (enemyDots.isNotEmpty()) {
+    val predictions = VisionPredictor.updateAndPredict(
+        dots = enemyDots,
+        minimapX = hud.minimapRect[0],
+        minimapY = hud.minimapRect[1],
+        minimapW = hud.minimapRect[2] - hud.minimapRect[0]
+    )
+    OverlayService.updatePredictions(predictions, hud.minimapRect)
+}
+// ---------------------------
+
+// UBAH: Tambahkan currentRole saat memanggil engine
+val advice = engine.update(snap, currentRole)
+
 
         if (now - lastOcrAt > OCR_EVERY_MS && ocrBusy.compareAndSet(false, true)) {
             lastOcrAt = now
